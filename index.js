@@ -12,7 +12,7 @@ console.log('Environment Variables:', {
 const bot = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessages, 
     GatewayIntentBits.MessageContent
   ]
 });
@@ -20,45 +20,74 @@ const bot = new Client({
 const server = express();
 const PORT = process.env.PORT || 3000;
 
-// Health check endpoint
+// Health check endpoint (required by Render)
 server.get('/health', (req, res) => res.status(200).send('OK'));
 server.get('/status', (req, res) => res.sendFile(path.join(__dirname, 'status.html')));
 
 const webServer = server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🟢 Server running on port ${PORT}`);
 });
 
-// Enhanced token validation
-function validateToken(token) {
-  if (!token) {
-    console.error('❌ ERROR: No token provided in BOT_TOKEN environment variable');
-    return false;
-  }
-  if (!token.match(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/)) {
-    console.error('❌ ERROR: Token format appears invalid');
-    return false;
-  }
-  return true;
+// ===== YOUR ORIGINAL STATUS ROTATION CODE =====
+const statusMessages = [
+  "⛔️ Working in MZA",
+  "🎨 Being more creative",
+  "🤖 Serving your server"
+];
+const statusTypes = ['dnd', 'idle'];
+let currentStatusIndex = 0;
+
+function updateStatus() {
+  const status = statusMessages[currentStatusIndex % statusMessages.length];
+  const type = statusTypes[currentStatusIndex % statusTypes.length];
+  
+  bot.user.setPresence({
+    activities: [{
+      name: status,
+      type: ActivityType.Custom
+    }],
+    status: type
+  });
+  
+  console.log(`🔄 Status updated to: ${status} (${type})`);
+  currentStatusIndex++;
 }
 
+// ===== ENHANCED STARTUP SEQUENCE ===== 
 async function startBot() {
   try {
-    if (!validateToken(process.env.BOT_TOKEN)) {
+    if (!process.env.BOT_TOKEN) {
+      console.error('❌ Missing BOT_TOKEN in environment variables');
       process.exit(1);
     }
 
     await bot.login(process.env.BOT_TOKEN);
     console.log(`✅ Logged in as ${bot.user.tag}`);
+    
+    // Initialize status rotation
+    updateStatus();
+    setInterval(updateStatus, 15000); // Rotate every 15 seconds
+    
+    // Health monitor
+    setInterval(() => {
+      console.log(`❤️ Bot heartbeat at ${new Date().toLocaleTimeString()}`);
+    }, 30000);
+    
   } catch (error) {
-    console.error('❌ Login failed. Double check:');
-    console.error('1. Your token in Render environment variables');
-    console.error('2. The token in Discord Developer Portal');
-    console.error('3. That all required intents are enabled');
-    console.error('Full error:', error.message);
+    console.error('❌ Login failed:', error.message);
     process.exit(1);
   }
 }
 
-// ... rest of your existing code ...
-
+// Start everything
 startBot();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 Shutting down gracefully...');
+  webServer.close(() => {
+    bot.destroy();
+    console.log('🔴 Services stopped');
+    process.exit(0);
+  });
+});
