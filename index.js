@@ -1,10 +1,14 @@
-// Import necessary modules
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
 
-// Initialize Discord client with proper intents
+// Debug environment variables
+console.log('Environment Variables:', {
+  PORT: process.env.PORT,
+  BOT_TOKEN: process.env.BOT_TOKEN ? '***REDACTED***' : 'MISSING'
+});
+
 const bot = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -13,89 +17,48 @@ const bot = new Client({
   ]
 });
 
-// Set up web server with Render-specific requirements
 const server = express();
-const serverPort = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-// Required health check endpoint for Render
-server.get('/health', (req, res) => {
-  res.status(200).send('OK');
+// Health check endpoint
+server.get('/health', (req, res) => res.status(200).send('OK'));
+server.get('/status', (req, res) => res.sendFile(path.join(__dirname, 'status.html')));
+
+const webServer = server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
-// Your status page route
-server.get('/status', (req, res) => {
-  res.sendFile(path.join(__dirname, 'status.html'));
-});
+// Enhanced token validation
+function validateToken(token) {
+  if (!token) {
+    console.error('❌ ERROR: No token provided in BOT_TOKEN environment variable');
+    return false;
+  }
+  if (!token.match(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/)) {
+    console.error('❌ ERROR: Token format appears invalid');
+    return false;
+  }
+  return true;
+}
 
-// Start server first (important for Render)
-const webServer = server.listen(serverPort, () => {
-  console.log('\x1b[36m[WEB SERVER]\x1b[0m', `\x1b[32mRunning on port ${serverPort}\x1b[0m`);
-});
-
-// Status rotation configuration
-const statusMessages = [
-  "🛠️ Maintaining systems",
-  "🎨 Designing new features",
-  "⚡ Optimizing performance"
-];
-const statusTypes = ['dnd', 'idle'];
-let statusIndex = 0;
-
-// Bot login function with Render environment variable
 async function startBot() {
   try {
-    // Using Render's environment variable
+    if (!validateToken(process.env.BOT_TOKEN)) {
+      process.exit(1);
+    }
+
     await bot.login(process.env.BOT_TOKEN);
-    console.log('\x1b[36m[LOGIN]\x1b[0m', `\x1b[32mLogged in as ${bot.user.tag}\x1b[0m`);
+    console.log(`✅ Logged in as ${bot.user.tag}`);
   } catch (error) {
-    console.error('\x1b[31m[ERROR]\x1b[0m', `Login failed. Please check your BOT_TOKEN environment variable: ${error.message}`);
+    console.error('❌ Login failed. Double check:');
+    console.error('1. Your token in Render environment variables');
+    console.error('2. The token in Discord Developer Portal');
+    console.error('3. That all required intents are enabled');
+    console.error('Full error:', error.message);
     process.exit(1);
   }
 }
 
-// Update bot presence
-function updatePresence() {
-  const status = statusMessages[statusIndex % statusMessages.length];
-  const type = statusTypes[statusIndex % statusTypes.length];
-  
-  bot.user.setPresence({
-    activities: [{
-      name: status,
-      type: ActivityType.Custom
-    }],
-    status: type
-  });
-  
-  console.log('\x1b[33m[STATUS]\x1b[0m', `Updated to: ${status}`);
-  statusIndex++;
-}
+// ... rest of your existing code ...
 
-// Bot ready event
-bot.once('ready', () => {
-  console.log('\x1b[36m[READY]\x1b[0m', `\x1b[34mPing: ${bot.ws.ping}ms\x1b[0m`);
-  updatePresence();
-  setInterval(updatePresence, 15000);
-  
-  // Health check
-  setInterval(() => {
-    console.log('\x1b[35m[HEALTH]\x1b[0m', `Bot is running at ${new Date().toLocaleTimeString()}`);
-  }, 30000);
-});
-
-// Start the bot
 startBot();
-
-// Error handling
-process.on('unhandledRejection', error => {
-  console.error('\x1b[31m[ERROR]\x1b[0m', `Unhandled rejection: ${error.message}`);
-});
-
-// Graceful shutdown for Render
-process.on('SIGTERM', () => {
-  console.log('\x1b[33m[SHUTDOWN]\x1b[0m', 'Received SIGTERM, shutting down gracefully');
-  webServer.close(() => {
-    bot.destroy();
-    console.log('\x1b[32m[SHUTDOWN]\x1b[0m', 'Server and bot closed successfully');
-    process.exit(0);
-  });
-});
