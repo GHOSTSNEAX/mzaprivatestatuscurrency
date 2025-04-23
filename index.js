@@ -13,15 +13,22 @@ const bot = new Client({
   ]
 });
 
-// Set up web server
+// Set up web server with Render-specific requirements
 const server = express();
 const serverPort = process.env.PORT || 3000;
 
+// Required health check endpoint for Render
+server.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
+// Your status page route
 server.get('/status', (req, res) => {
   res.sendFile(path.join(__dirname, 'status.html'));
 });
 
-server.listen(serverPort, () => {
+// Start server first (important for Render)
+const webServer = server.listen(serverPort, () => {
   console.log('\x1b[36m[WEB SERVER]\x1b[0m', `\x1b[32mRunning on port ${serverPort}\x1b[0m`);
 });
 
@@ -34,13 +41,14 @@ const statusMessages = [
 const statusTypes = ['dnd', 'idle'];
 let statusIndex = 0;
 
-// Bot login function
+// Bot login function with Render environment variable
 async function startBot() {
   try {
+    // Using Render's environment variable
     await bot.login(process.env.BOT_TOKEN);
     console.log('\x1b[36m[LOGIN]\x1b[0m', `\x1b[32mLogged in as ${bot.user.tag}\x1b[0m`);
   } catch (error) {
-    console.error('\x1b[31m[ERROR]\x1b[0m', `Login failed: ${error.message}`);
+    console.error('\x1b[31m[ERROR]\x1b[0m', `Login failed. Please check your BOT_TOKEN environment variable: ${error.message}`);
     process.exit(1);
   }
 }
@@ -80,4 +88,14 @@ startBot();
 // Error handling
 process.on('unhandledRejection', error => {
   console.error('\x1b[31m[ERROR]\x1b[0m', `Unhandled rejection: ${error.message}`);
+});
+
+// Graceful shutdown for Render
+process.on('SIGTERM', () => {
+  console.log('\x1b[33m[SHUTDOWN]\x1b[0m', 'Received SIGTERM, shutting down gracefully');
+  webServer.close(() => {
+    bot.destroy();
+    console.log('\x1b[32m[SHUTDOWN]\x1b[0m', 'Server and bot closed successfully');
+    process.exit(0);
+  });
 });
